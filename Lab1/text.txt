@@ -1,0 +1,48 @@
+WITH recursive_departments AS (
+    -- Рекурсивный запрос для получения всех департаментов, включая дочерние
+    SELECT 
+        d.id AS dept_id,
+        d.c_code AS dept_code,
+        d.parent_id
+    FROM Bi_view_departs_IBS_tree d
+    WHERE d.id = :SELECTED_DEPARTMENT_ID -- Выбранный департамент
+
+    UNION ALL
+
+    SELECT 
+        d.id AS dept_id,
+        d.c_code AS dept_code,
+        d.parent_id
+    FROM Bi_view_departs_IBS_tree d
+    JOIN recursive_departments r ON d.parent_id = r.dept_id
+),
+department_users AS (
+    -- Найти всех пользователей в выбранных департаментах
+    SELECT 
+        u.LDAP_login,
+        u.depart_code
+    FROM Bi_validate_user_dep u
+    JOIN recursive_departments d ON u.depart_code = d.dept_code
+),
+accessible_pages AS (
+    -- Найти все страницы, доступные через департаменты или LDAP логины
+    SELECT DISTINCT 
+        p.page_id
+    FROM Bi_acc_depart_pages p
+    LEFT JOIN department_users u ON p.LDAP_login = u.LDAP_login OR p.depart_code LIKE '%'  u.depart_code  ':%'
+    WHERE u.LDAP_login IS NOT NULL OR p.depart_code IS NOT NULL
+),
+filtered_pages AS (
+    -- Если пользователь выбрал департамент, возвращаем страницы только для этого департамента
+    SELECT 
+        p.page_id
+    FROM Bi_portal_map_pages p
+    JOIN accessible_pages a ON p.page_id = a.page_id
+)
+-- Итоговый результат: либо все страницы, либо страницы для выбранного департамента
+SELECT DISTINCT 
+    p.page_id,
+    p.page_name
+FROM Bi_portal_map_pages p
+WHERE (:SELECTED_DEPARTMENT_ID IS NULL OR p.page_id IN (SELECT page_id FROM filtered_pages))
+ORDER BY p.page_name;
