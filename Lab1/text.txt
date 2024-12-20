@@ -1,48 +1,46 @@
 WITH recursive_departments AS (
-    -- Рекурсивный запрос для получения всех департаментов, включая дочерние
+    -- Используем CONNECT BY для построения иерархии департаментов
     SELECT 
-        d.id AS dept_id,
-        d.c_code AS dept_code,
-        d.parent_id
+        d.id AS dept_id,        -- ID департамента
+        d.parent_id AS parent_id, -- Родительский ID
+        d.c_code AS dept_code,  -- Код департамента
+        LEVEL AS hierarchy_level -- Уровень вложенности
     FROM Bi_view_departs_IBS_tree d
-    WHERE d.id = :SELECTED_DEPARTMENT_ID -- Выбранный департамент
-
-    UNION ALL
-
-    SELECT 
-        d.id AS dept_id,
-        d.c_code AS dept_code,
-        d.parent_id
-    FROM Bi_view_departs_IBS_tree d
-    JOIN recursive_departments r ON d.parent_id = r.dept_id
+    START WITH d.id = :SELECTED_DEPARTMENT_ID -- Выбранный департамент
+    CONNECT BY PRIOR d.id = d.parent_id -- Иерархия родитель -> дочерний
 ),
 department_users AS (
-    -- Найти всех пользователей в выбранных департаментах
+    -- Найти всех пользователей, привязанных к выбранным департаментам
     SELECT 
-        u.LDAP_login,
-        u.depart_code
+        u.LDAP_login AS user_login,
+        u.depart_code AS user_depart_code
     FROM Bi_validate_user_dep u
     JOIN recursive_departments d ON u.depart_code = d.dept_code
 ),
 accessible_pages AS (
-    -- Найти все страницы, доступные через департаменты или LDAP логины
+    -- Найти страницы, доступные через департаменты или конкретных пользователей
     SELECT DISTINCT 
-        p.page_id
+        p.page_id AS accessible_page_id
     FROM Bi_acc_depart_pages p
-    LEFT JOIN department_users u ON p.LDAP_login = u.LDAP_login OR p.depart_code LIKE '%'  u.depart_code  ':%'
-    WHERE u.LDAP_login IS NOT NULL OR p.depart_code IS NOT NULL
+    LEFT JOIN department_users u 
+        ON p.LDAP_login = u.user_login 
+        OR p.depart_code LIKE '%'  u.user_depart_code  '%'
+    WHERE 
+        u.user_login IS NOT NULL 
+        OR p.depart_code IS NOT NULL
 ),
 filtered_pages AS (
-    -- Если пользователь выбрал департамент, возвращаем страницы только для этого департамента
+    -- Страницы, доступные для выбранного департамента
     SELECT 
-        p.page_id
+        p.page_id AS filtered_page_id
     FROM Bi_portal_map_pages p
-    JOIN accessible_pages a ON p.page_id = a.page_id
+    JOIN accessible_pages a ON p.page_id = a.accessible_page_id
 )
--- Итоговый результат: либо все страницы, либо страницы для выбранного департамента
+-- Итоговый запрос: отображение всех страниц или только для выбранного департамента
 SELECT DISTINCT 
-    p.page_id,
-    p.page_name
+    p.page_id AS page_id, 
+    p.page_name AS page_name
 FROM Bi_portal_map_pages p
-WHERE (:SELECTED_DEPARTMENT_ID IS NULL OR p.page_id IN (SELECT page_id FROM filtered_pages))
+WHERE :SELECTED_DEPARTMENT_ID IS NULL 
+   OR p.page_id IN (SELECT filtered_page_id FROM filtered_pages)
 ORDER BY p.page_name;
