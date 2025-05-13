@@ -15,28 +15,14 @@ def adoc_to_md(adoc_text):
         # Списки
         elif line.strip().startswith("* "):
             md_lines.append("- " + line.strip()[2:])
-        # Жирный текст: **text**
+        # Остальной текст
         else:
             line = re.sub(r"\*\*(.*?)\*\*", r"**\1**", line)
-            # Курсив: *text*
             line = re.sub(r"__(.*?)__", r"*\1*", line)
             line = re.sub(r"_(.*?)_", r"*\1*", line)
-            md_lines.append(line)
+            if line.strip():  # если не пустая строка
+                md_lines.append(line + "  ")  # два пробела для переноса строки
+            else:
+                md_lines.append("")  # пустая строка сохраняется как есть
 
     return "\n".join(md_lines)
-
-# Пример:
-asciidoc = """
-= Документ
-Автор
-
-== Раздел 1
-
-Это _курсив_, а это **жирный текст**.
-
-* Пункт 1
-* Пункт 2
-"""
-
-md = adoc_to_md(asciidoc)
-print(md)
