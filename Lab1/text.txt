@@ -5,24 +5,28 @@ def adoc_to_md(adoc_text):
     md_lines = []
 
     for line in lines:
-        # Заголовки
-        if re.match(r"^= ", line):
-            md_lines.append("# " + line[2:])
-        elif re.match(r"^== ", line):
-            md_lines.append("## " + line[3:])
-        elif re.match(r"^=== ", line):
-            md_lines.append("### " + line[4:])
+        # Заголовки AsciiDoc: =, ==, ===, ...
+        if re.match(r"^={1,6} ", line):
+            level = line.count('=', 0, line.find(' '))
+            content = line[level+1:].strip()
+            md_lines.append("#" * level + " " + content)
+            continue
+
         # Списки
-        elif line.strip().startswith("* "):
+        if line.strip().startswith("* "):
             md_lines.append("- " + line.strip()[2:])
-        # Остальной текст
-        else:
-            line = re.sub(r"\*\*(.*?)\*\*", r"**\1**", line)
-            line = re.sub(r"__(.*?)__", r"*\1*", line)
-            line = re.sub(r"_(.*?)_", r"*\1*", line)
-            if line.strip():  # если не пустая строка
-                md_lines.append(line + "  ")  # два пробела для переноса строки
-            else:
-                md_lines.append("")  # пустая строка сохраняется как есть
+            continue
+
+        # Ссылки: link:http://example.com[Example] → [Example](http://example.com)
+        line = re.sub(r'link:([^]+)([^]+)', r'[\2](\1)', line)
+
+        # Жирный текст (удваиваемые **) — допустим только вокруг слов
+        line = re.sub(r'\*\*(.+?)\*\*', r'**\1**', line)
+
+        # Курсив — только если _обрамляет_ слово, но не в середине слова
+        line = re.sub(r'(?<!\w)_(\w.*?)_(?!\w)', r'*\1*', line)
+
+        # Перенос строки с двойным пробелом, если строка не пустая
+        md_lines.append(line + ("  " if line.strip() else ""))
 
     return "\n".join(md_lines)
