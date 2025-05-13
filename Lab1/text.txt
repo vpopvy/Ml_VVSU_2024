@@ -1,46 +1,42 @@
-WITH recursive_departments AS (
-    -- Используем CONNECT BY для построения иерархии департаментов
-    SELECT 
-        d.id AS dept_id,        -- ID департамента
-        d.parent_id AS parent_id, -- Родительский ID
-        d.c_code AS dept_code,  -- Код департамента
-        LEVEL AS hierarchy_level -- Уровень вложенности
-    FROM Bi_view_departs_IBS_tree d
-    START WITH d.id = :SELECTED_DEPARTMENT_ID -- Выбранный департамент
-    CONNECT BY PRIOR d.id = d.parent_id -- Иерархия родитель -> дочерний
-),
-department_users AS (
-    -- Найти всех пользователей, привязанных к выбранным департаментам
-    SELECT 
-        u.LDAP_login AS user_login,
-        u.depart_code AS user_depart_code
-    FROM Bi_validate_user_dep u
-    JOIN recursive_departments d ON u.depart_code = d.dept_code
-),
-accessible_pages AS (
-    -- Найти страницы, доступные через департаменты или конкретных пользователей
-    SELECT DISTINCT 
-        p.page_id AS accessible_page_id
-    FROM Bi_acc_depart_pages p
-    LEFT JOIN department_users u 
-        ON p.LDAP_login = u.user_login 
-        OR p.depart_code LIKE '%'  u.user_depart_code  '%'
-    WHERE 
-        u.user_login IS NOT NULL 
-        OR p.depart_code IS NOT NULL
-),
-filtered_pages AS (
-    -- Страницы, доступные для выбранного департамента
-    SELECT 
-        p.page_id AS filtered_page_id
-    FROM Bi_portal_map_pages p
-    JOIN accessible_pages a ON p.page_id = a.accessible_page_id
-)
--- Итоговый запрос: отображение всех страниц или только для выбранного департамента
-SELECT DISTINCT 
-    p.page_id AS page_id, 
-    p.page_name AS page_name
-FROM Bi_portal_map_pages p
-WHERE :SELECTED_DEPARTMENT_ID IS NULL 
-   OR p.page_id IN (SELECT filtered_page_id FROM filtered_pages)
-ORDER BY p.page_name;
+import re
+
+def adoc_to_md(adoc_text):
+    lines = adoc_text.splitlines()
+    md_lines = []
+
+    for line in lines:
+        # Заголовки
+        if re.match(r"^= ", line):
+            md_lines.append("# " + line[2:])
+        elif re.match(r"^== ", line):
+            md_lines.append("## " + line[3:])
+        elif re.match(r"^=== ", line):
+            md_lines.append("### " + line[4:])
+        # Списки
+        elif line.strip().startswith("* "):
+            md_lines.append("- " + line.strip()[2:])
+        # Жирный текст: **text**
+        else:
+            line = re.sub(r"\*\*(.*?)\*\*", r"**\1**", line)
+            # Курсив: *text*
+            line = re.sub(r"__(.*?)__", r"*\1*", line)
+            line = re.sub(r"_(.*?)_", r"*\1*", line)
+            md_lines.append(line)
+
+    return "\n".join(md_lines)
+
+# Пример:
+asciidoc = """
+= Документ
+Автор
+
+== Раздел 1
+
+Это _курсив_, а это **жирный текст**.
+
+* Пункт 1
+* Пункт 2
+"""
+
+md = adoc_to_md(asciidoc)
+print(md)
